@@ -87,50 +87,8 @@ It audits technical SEO, tracks Core Web Vitals risks, checks security headers, 
 
 ---
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Node.js:** v18.18.0 or higher (v20+ recommended)
-- **npm** or **pnpm** or **yarn**
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/TejaPriyan/Trace.git
-cd Trace
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
----
-
-## ⚙️ Configuration (Optional)
-
-TRACE is fully functional without any database. If you wish to enable persistent storage across restarts, configure PostgreSQL:
-
-Create a `.env.local` file in the root directory:
-
-```env
-DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/trace_db
-```
-
-Push schema migrations:
-
-```bash
-npx drizzle-kit push
-```
-
----
-
 ## 📦 Scripts
+
 
 | Script | Command | Description |
 | :--- | :--- | :--- |
