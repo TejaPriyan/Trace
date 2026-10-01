@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://trace.intelligence.dev"),
+  metadataBase: new URL("https://tracewebsite.vercel.app"),
   title: {
     default: "TRACE — The X-ray for the Web | Website Intelligence & Architectural Audit",
     template: "%s | TRACE — By Teja Priyan",
@@ -49,12 +49,13 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://trace.intelligence.dev",
+    url: "https://tracewebsite.vercel.app",
     siteName: "TRACE",
     title: "TRACE — The X-ray for the Web",
     description:
       "Enter any public website and explore its structure, content, relationships, technologies, journeys, and signals through an interactive map.",
   },
+
   twitter: {
     card: "summary_large_image",
     title: "TRACE — The X-ray for the Web",
@@ -85,7 +86,7 @@ const jsonLd = {
       "browserRequirements": "Requires JavaScript",
       "description":
         "The X-ray for the Web: an interactive website intelligence platform that crawls public websites, analyzes technology stacks, scores SEO and security signals, and visualizes architecture via interactive D3 graph layouts.",
-      "url": "https://trace.intelligence.dev",
+      "url": "https://tracewebsite.vercel.app",
       "author": {
         "@type": "Person",
         "name": "Teja Priyan",
@@ -110,7 +111,7 @@ const jsonLd = {
     {
       "@type": "WebSite",
       "name": "TRACE",
-      "url": "https://trace.intelligence.dev",
+      "url": "https://tracewebsite.vercel.app",
       "description": "The X-ray for the web — Website intelligence, architectural mapping, and technical audits.",
       "author": {
         "@type": "Person",

@@ -5,13 +5,20 @@
 </p>
 
 <p align="center">
+  <a href="https://tracewebsite.vercel.app/" target="_blank">
+    <img src="https://img.shields.io/badge/Live_Demo-tracewebsite.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo" />
+  </a>
   <img src="https://img.shields.io/badge/Next.js-16.2.6-black?style=for-the-badge&logo=next.js" alt="Next.js" />
   <img src="https://img.shields.io/badge/React-19.2.6-blue?style=for-the-badge&logo=react" alt="React 19" />
   <img src="https://img.shields.io/badge/TypeScript-5.9.3-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />
   <img src="https://img.shields.io/badge/TailwindCSS-v4-38bdf8?style=for-the-badge&logo=tailwind-css" alt="Tailwind CSS" />
-  <img src="https://img.shields.io/badge/Turbopack-Enabled-orange?style=for-the-badge" alt="Turbopack" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
 </p>
+
+<p align="center">
+  🌐 <strong>Live Application:</strong> <a href="https://tracewebsite.vercel.app/">https://tracewebsite.vercel.app</a>
+</p>
+
 
 ---
 
@@ -109,5 +116,7 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more informa
 ## 👤 Author
 
 **Teja Priyan**
+- Live Platform: [https://tracewebsite.vercel.app/](https://tracewebsite.vercel.app/)
 - GitHub: [@TejaPriyan](https://github.com/TejaPriyan)
 - Email: [teja1616150@gmail.com](mailto:teja1616150@gmail.com)
+

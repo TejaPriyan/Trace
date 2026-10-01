@@ -14,6 +14,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/api/"],
       },
     ],
-    sitemap: "https://trace.intelligence.dev/sitemap.xml",
+    sitemap: "https://tracewebsite.vercel.app/sitemap.xml",
   };
 }

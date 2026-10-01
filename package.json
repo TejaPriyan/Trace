@@ -4,7 +4,7 @@
   "description": "TRACE — Interactive Website Intelligence, Architectural Visualization, and Technical Audit Platform",
   "author": "Teja Priyan <teja1616150@gmail.com>",
   "license": "MIT",
-  "homepage": "https://github.com/TejaPriyan/Trace#readme",
+  "homepage": "https://tracewebsite.vercel.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TejaPriyan/Trace.git"
