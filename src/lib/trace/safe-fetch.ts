@@ -6,7 +6,8 @@ import zlib from "node:zlib";
 import { LIMITS } from "./limits";
 import { TraceError, assertPublicHostname, isPrivateIp } from "./security";
 
-export const USER_AGENT = "TraceBot/1.0 (+public website structure analysis; respects robots.txt)";
+export const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (compatible; TraceBot/1.0; +https://tracewebsite.vercel.app)";
 
 export interface SafeResponse {
   url: string;
@@ -36,14 +37,16 @@ const safeLookup = ((
   options: dns.LookupOptions,
   callback: (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void,
 ) => {
-  dns.lookup(hostname, { all: true, verbatim: true }, (err, addrs) => {
+  dns.lookup(hostname, { all: true, verbatim: false }, (err, addrs) => {
     if (err) return callback(err, "", 4);
     if (!addrs.length) return callback(new Error("ENOTFOUND") as NodeJS.ErrnoException, "", 4);
     if (addrs.some((a) => isPrivateIp(a.address))) {
       return callback(new Error("BLOCKED_ADDRESS") as NodeJS.ErrnoException, "", 4);
     }
-    if (options.all) return callback(null, addrs);
-    callback(null, addrs[0].address, addrs[0].family);
+    // Prefer IPv4 addresses first for cloud & serverless reliability (AWS Lambda/Vercel)
+    const sorted = [...addrs].sort((a, b) => (a.family === 4 ? -1 : 1));
+    if (options.all) return callback(null, sorted);
+    callback(null, sorted[0].address, sorted[0].family);
   });
 }) as unknown as net_LookupFunction;
 
@@ -89,9 +92,17 @@ function once(
         lookup: safeLookup,
         headers: {
           "user-agent": USER_AGENT,
-          accept: opts.accept ?? "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+          accept: opts.accept ?? "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
           "accept-encoding": "gzip, deflate, br",
-          "accept-language": "en",
+          "accept-language": "en-US,en;q=0.9",
+          "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": '"Windows"',
+          "sec-fetch-dest": "document",
+          "sec-fetch-mode": "navigate",
+          "sec-fetch-site": "none",
+          "sec-fetch-user": "?1",
+          "upgrade-insecure-requests": "1",
         },
       },
       (res) => {

@@ -9,20 +9,94 @@ import type { TraceReport } from "@/lib/trace/types";
 async function loadReport(input: string, status: (s: string) => void): Promise<TraceReport> {
   const t = input.trim();
   let id: string;
-  if (/^demo$/i.test(t)) id = "demo";
-  else if (/^TRC-[0-9A-Za-z]{8}$/.test(t)) id = t.toUpperCase();
-  else {
-    status("Validating…");
-    const res = await fetch("/api/trace", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: t }) });
+
+  // 1. Check local session storage first
+  try {
+    const cachedByUrl = sessionStorage.getItem(`trace:url:${t}`);
+    if (cachedByUrl) {
+      const rep = JSON.parse(cachedByUrl) as TraceReport;
+      if (rep?.stats?.pages) return rep;
+    }
+    const cachedById = sessionStorage.getItem(`trace:report:${t}`);
+    if (cachedById) {
+      const rep = JSON.parse(cachedById) as TraceReport;
+      if (rep?.stats?.pages) return rep;
+    }
+  } catch {}
+
+  if (/^demo$/i.test(t)) {
+    id = "demo";
+  } else if (/^TRC-[0-9A-Za-z]{8}$/.test(t)) {
+    id = t.toUpperCase();
+  } else {
+    status("Crawling website…");
+    const res = await fetch("/api/trace", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: t, sync: true }),
+    });
     const d = await res.json();
     if (!res.ok) throw new Error(d?.error?.detail ? `${d.error.message} (${d.error.detail})` : d?.error?.message ?? "Request failed");
+    if (d.report) {
+      try {
+        sessionStorage.setItem(`trace:url:${t}`, JSON.stringify(d.report));
+        sessionStorage.setItem(`trace:report:${d.report.id}`, JSON.stringify(d.report));
+      } catch {}
+      return d.report as TraceReport;
+    }
     id = d.existing ? d.existing.id : d.id;
   }
+
   for (let i = 0; i < 300; i++) {
     const res = await fetch(`/api/trace/${id}`, { cache: "no-store" });
-    if (res.status === 404) throw new Error("Trace not found");
+    if (res.status === 404) {
+      // If trace missing in serverless container and input is a website URL, fallback to stream
+      if (!/^TRC-/i.test(t) && !/^demo$/i.test(t)) {
+        status("Connecting to crawler…");
+        const streamRes = await fetch(`/api/trace/stream?id=${encodeURIComponent(id)}&url=${encodeURIComponent(t)}`);
+        if (streamRes.ok && streamRes.body) {
+          const reader = streamRes.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const parts = buf.split("\n\n");
+            buf = parts.pop() ?? "";
+            for (const part of parts) {
+              const dataMatch = part.match(/^data:\s*(.+)$/m);
+              const eventMatch = part.match(/^event:\s*(\w+)/m);
+              if (dataMatch && eventMatch) {
+                const event = eventMatch[1];
+                const parsed = JSON.parse(dataMatch[1]);
+                if (event === "progress") {
+                  status(`${parsed.phase} · ${parsed.analyzed} pages`);
+                } else if (event === "complete") {
+                  const rep = parsed.report as TraceReport;
+                  try {
+                    sessionStorage.setItem(`trace:url:${t}`, JSON.stringify(rep));
+                    sessionStorage.setItem(`trace:report:${rep.id}`, JSON.stringify(rep));
+                  } catch {}
+                  return rep;
+                } else if (event === "error") {
+                  throw new Error(parsed.message ?? "Trace failed");
+                }
+              }
+            }
+          }
+        }
+      }
+      throw new Error("Trace not found");
+    }
     const d = await res.json();
-    if (d.status === "complete") return d.report as TraceReport;
+    if (d.status === "complete") {
+      try {
+        sessionStorage.setItem(`trace:url:${t}`, JSON.stringify(d.report));
+        sessionStorage.setItem(`trace:report:${d.report.id}`, JSON.stringify(d.report));
+      } catch {}
+      return d.report as TraceReport;
+    }
     if (d.status === "failed") throw new Error(d.error?.message ?? "Trace failed");
     status(`${d.progress.phase} · ${d.progress.analyzed} pages`);
     await new Promise((r) => setTimeout(r, 900));

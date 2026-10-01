@@ -47,7 +47,10 @@ export function Landing() {
         setBusy(false);
         return;
       }
-      router.push(`/trace/${data.id}`);
+      try {
+        sessionStorage.setItem(`trace:pending:${data.id}`, JSON.stringify({ url, settings }));
+      } catch {}
+      router.push(`/trace/${data.id}?url=${encodeURIComponent(url)}`);
     } catch {
       setErr({ message: "TRACE couldn't reach its server.", detail: "Check your connection and try again." });
       setBusy(false);

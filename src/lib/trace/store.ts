@@ -94,51 +94,131 @@ export async function startTrace(opts: { url: string; settings: CrawlSettings; l
     error: null,
   };
   jobs.set(id, progress);
-  void runJob(id, opts.url, opts.settings, progress).finally(() => {
-    releaseJob(opts.limiterKey, opts.host);
-    setTimeout(() => jobs.delete(id), 90_000);
-  });
+  void executeTrace({
+    id,
+    url: opts.url,
+    settings: opts.settings,
+    onProgress: (p) => Object.assign(progress, p),
+  })
+    .catch(() => {})
+    .finally(() => {
+      releaseJob(opts.limiterKey, opts.host);
+      setTimeout(() => jobs.delete(id), 90_000);
+    });
   return id;
 }
 
-async function runJob(id: string, url: string, settings: CrawlSettings, p: Progress) {
-  const setPhase = (ph: Phase) => {
-    p.phase = ph;
+export async function executeTrace(opts: {
+  id?: string;
+  url: string;
+  settings: CrawlSettings;
+  onPhase?: (phase: Phase, msg?: string) => void;
+  onProgress?: (progress: Progress) => void;
+}): Promise<TraceReport> {
+  const id = opts.id ?? newTraceId();
+  const u = new URL(opts.url);
+  const key = urlKey(opts.url);
+  memoryWebsites.set(key, { id, url: opts.url, urlKey: key, createdAt: new Date() });
+  if (db) {
+    try {
+      await db.insert(t.websites).values({
+        traceId: id,
+        url: opts.url,
+        urlKey: key,
+        hostname: u.hostname.replace(/^www\./, ""),
+        status: "running",
+        settings: opts.settings as unknown as Record<string, unknown>,
+      });
+    } catch {}
+  }
+
+  const progress: Progress = {
+    phase: "connecting",
+    discovered: 0,
+    analyzed: 0,
+    queued: 0,
+    depth: 0,
+    externalDomains: 0,
+    maxPages: opts.settings.maxPages,
+    log: [],
+    startedAt: Date.now(),
+    message: "Validating destination",
+    robots: null,
+    error: null,
   };
+  jobs.set(id, progress);
+
+  const setPhase = (ph: Phase, msg?: string) => {
+    progress.phase = ph;
+    if (msg !== undefined) progress.message = msg;
+    opts.onPhase?.(ph, msg);
+    opts.onProgress?.({ ...progress });
+  };
+
   try {
-    const crawl = await crawlSite(url, settings, {
+    const crawl = await crawlSite(opts.url, opts.settings, {
       onPhase: (ph, msg) => {
-        setPhase(ph);
-        p.message = msg ?? null;
+        setPhase(ph, msg);
       },
       onRobots: (s) => {
-        p.robots = s;
+        progress.robots = s;
+        opts.onProgress?.({ ...progress });
       },
       onUpdate: (u) => {
-        p.discovered = u.discovered;
-        p.analyzed = u.analyzed;
-        p.queued = u.queued;
-        p.depth = u.depth;
-        p.externalDomains = u.externalDomains;
-        pushLog(p.log, u.log);
+        progress.discovered = u.discovered;
+        progress.analyzed = u.analyzed;
+        progress.queued = u.queued;
+        progress.depth = u.depth;
+        progress.externalDomains = u.externalDomains;
+        pushLog(progress.log, u.log);
+        opts.onProgress?.({ ...progress });
       },
     });
+
     const report = await buildReport(
-      { id, demo: false, startUrl: crawl.startUrl, siteHost: crawl.siteHost, pages: crawl.pages, policy: crawl.policy, notes: crawl.notes, favicon: crawl.favicon, durationMs: crawl.durationMs, settings },
-      setPhase,
+      {
+        id,
+        demo: false,
+        startUrl: crawl.startUrl,
+        siteHost: crawl.siteHost,
+        pages: crawl.pages,
+        policy: crawl.policy,
+        notes: crawl.notes,
+        favicon: crawl.favicon,
+        durationMs: crawl.durationMs,
+        settings: opts.settings,
+      },
+      (ph) => setPhase(ph),
     );
+
     await persist(report);
-    p.phase = "done";
+    progress.phase = "done";
+    opts.onPhase?.("done");
+    opts.onProgress?.({ ...progress });
+    return report;
   } catch (e) {
     const code: ErrorCode = e instanceof TraceError ? e.code : "INTERNAL";
     const message = e instanceof TraceError ? e.message : "Unexpected error";
-    if (!(e instanceof TraceError)) console.error("[trace] job failed", e);
-    p.phase = "error";
-    p.error = { code, message };
+    if (!(e instanceof TraceError)) console.error("[trace] executeTrace failed", e);
+    progress.phase = "error";
+    progress.error = { code, message };
+    opts.onPhase?.("error");
+    opts.onProgress?.({ ...progress });
     if (db) {
       await db.update(t.websites).set({ status: "failed", error: { code, message } }).where(eq(t.websites.traceId, id)).catch(() => {});
     }
+    throw e;
+  } finally {
+    setTimeout(() => jobs.delete(id), 90_000);
   }
+}
+
+export function saveReportInMemory(r: TraceReport) {
+  memoryReports.set(r.id, r);
+}
+
+export function getMemoryReport(id: string): TraceReport | undefined {
+  return memoryReports.get(id);
 }
 
 function pushLog(log: CrawlLogEntry[], e: CrawlLogEntry) {

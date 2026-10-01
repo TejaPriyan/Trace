@@ -40,11 +40,123 @@ export function Workspace({ id }: { id: string }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sawRunning = false;
     let failures = 0;
+
+    // 1. Check local session storage first for instantaneous offline/serverless cache load
+    try {
+      const cached = sessionStorage.getItem(`trace:report:${id}`);
+      if (cached) {
+        const report = JSON.parse(cached) as TraceReport;
+        setState({ kind: "ready", report });
+        return;
+      }
+    } catch {}
+
+    const startStream = async (targetUrl: string) => {
+      sawRunning = true;
+      setState({
+        kind: "running",
+        progress: {
+          phase: "connecting",
+          discovered: 0,
+          analyzed: 0,
+          queued: 0,
+          depth: 0,
+          externalDomains: 0,
+          maxPages: 25,
+          log: [],
+          startedAt: Date.now(),
+          message: "Connecting to serverless crawler…",
+          robots: null,
+          error: null,
+        },
+      });
+
+      try {
+        const res = await fetch(`/api/trace/stream?id=${encodeURIComponent(id)}&url=${encodeURIComponent(targetUrl)}`);
+        if (cancelled) return;
+        if (!res.ok || !res.body) {
+          const errJson = await res.json().catch(() => ({}));
+          setState({
+            kind: "error",
+            code: errJson?.error?.code ?? "INTERNAL",
+            message: errJson?.error?.message ?? "Failed to trace website.",
+          });
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            if (!part.trim()) continue;
+            const eventMatch = part.match(/^event:\s*(\w+)/m);
+            const dataMatch = part.match(/^data:\s*(.+)$/m);
+            const event = eventMatch ? eventMatch[1] : "message";
+            if (!dataMatch) continue;
+
+            try {
+              const data = JSON.parse(dataMatch[1]);
+              if (event === "progress") {
+                setState({ kind: "running", progress: data });
+              } else if (event === "complete") {
+                const report = data.report as TraceReport;
+                try {
+                  sessionStorage.setItem(`trace:report:${report.id}`, JSON.stringify(report));
+                  sessionStorage.removeItem(`trace:pending:${id}`);
+                } catch {}
+                if (!report.demo) {
+                  addRecent({ id: report.id, hostname: report.hostname, pages: report.stats.pages, at: new Date().toISOString() });
+                }
+                setState({ kind: "reveal", report });
+                return;
+              } else if (event === "error") {
+                setState({ kind: "error", code: data.code ?? "INTERNAL", message: data.message ?? "Trace failed" });
+                return;
+              }
+            } catch {}
+          }
+        }
+      } catch {
+        if (cancelled) return;
+        setState({ kind: "error", code: "UNREACHABLE", message: "Lost connection to TRACE." });
+      }
+    };
+
     const poll = async () => {
       try {
         const res = await fetch(`/api/trace/${id}`, { cache: "no-store" });
         if (cancelled) return;
-        if (res.status === 404) return setState({ kind: "missing" });
+
+        if (res.status === 404) {
+          // If serverless container has lost in-memory job state, attempt streaming crawl with pending URL
+          let targetUrl: string | null = null;
+          try {
+            const urlParam = new URLSearchParams(window.location.search).get("url");
+            if (urlParam) targetUrl = urlParam;
+            else {
+              const pendingRaw = sessionStorage.getItem(`trace:pending:${id}`);
+              if (pendingRaw) {
+                const p = JSON.parse(pendingRaw);
+                if (p?.url) targetUrl = p.url;
+              }
+            }
+          } catch {}
+
+          if (targetUrl) {
+            void startStream(targetUrl);
+            return;
+          }
+          return setState({ kind: "missing" });
+        }
+
         const d = await res.json();
         failures = 0;
         if (d.status === "running") {
@@ -55,6 +167,10 @@ export function Workspace({ id }: { id: string }) {
           setState({ kind: "error", code: d.error?.code ?? "INTERNAL", message: d.error?.message ?? "" });
         } else if (d.status === "complete") {
           const report = d.report as TraceReport;
+          try {
+            sessionStorage.setItem(`trace:report:${report.id}`, JSON.stringify(report));
+            sessionStorage.removeItem(`trace:pending:${id}`);
+          } catch {}
           if (!report.demo) addRecent({ id: report.id, hostname: report.hostname, pages: report.stats.pages, at: new Date().toISOString() });
           let showReveal = sawRunning;
           if (report.demo) {

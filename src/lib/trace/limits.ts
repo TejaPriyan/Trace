@@ -4,21 +4,21 @@ import type { CrawlSettings } from "./types";
 export const LIMITS = {
   MAX_PAGES: 50,
   MAX_DEPTH: 4,
-  MAX_TIMEOUT_SEC: 20,
+  MAX_TIMEOUT_SEC: 30,
   MIN_TIMEOUT_SEC: 3,
   MAX_RESPONSE_BYTES: 10 * 1024 * 1024,
   MAX_CONCURRENT_REQUESTS: 3,
   MAX_REDIRECTS: 5,
   MAX_CRAWL_MS: 150_000,
-  REQUEST_DELAY_MS: 250,
+  REQUEST_DELAY_MS: 200,
   MAX_CRAWL_DELAY_MS: 3000,
   MAX_LINKS_PER_PAGE: 400,
   MAX_QUERY_VARIANTS_PER_PATH: 3,
   // rate limits
-  TRACES_PER_IP_WINDOW: 6,
+  TRACES_PER_IP_WINDOW: 10,
   TRACE_WINDOW_MS: 10 * 60 * 1000,
-  CONCURRENT_JOBS_PER_IP: 2,
-  CONCURRENT_JOBS_GLOBAL: 4,
+  CONCURRENT_JOBS_PER_IP: 4,
+  CONCURRENT_JOBS_GLOBAL: 8,
   // cache
   CACHE_TTL_MS: 60 * 60 * 1000,
   RETENTION_MS: 7 * 24 * 60 * 60 * 1000,
@@ -27,7 +27,7 @@ export const LIMITS = {
 export const DEFAULT_SETTINGS: CrawlSettings = {
   maxPages: 25,
   maxDepth: 3,
-  timeoutSec: 10,
+  timeoutSec: 15,
   jsRendering: "auto",
   analyzeAssets: true,
 };

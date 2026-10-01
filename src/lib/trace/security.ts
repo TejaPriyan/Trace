@@ -129,7 +129,7 @@ export async function assertPublicDns(hostnameRaw: string): Promise<void> {
   if (net.isIP(hostname)) return assertPublicHostname(hostname);
   let addrs: dns.LookupAddress[];
   try {
-    addrs = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+    addrs = await dns.promises.lookup(hostname, { all: true, verbatim: false });
   } catch {
     throw new TraceError("UNREACHABLE", "Hostname could not be resolved");
   }
