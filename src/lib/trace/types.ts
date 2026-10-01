@@ -137,6 +137,7 @@ export interface PageData {
   path: string;
   status: number | null; // null = request failed
   error: string | null;
+  headers?: Record<string, string>;
   contentType: string | null;
   depth: number;
   parentUrl: string | null;

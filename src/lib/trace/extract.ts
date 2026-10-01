@@ -400,6 +400,7 @@ export function extractPage(html: string, ctx: ExtractContext): PageData {
     path,
     status: ctx.status,
     error: null,
+    headers: ctx.headers,
     contentType: ctx.headers["content-type"]?.split(";")[0].trim() ?? null,
     depth: ctx.depth,
     parentUrl: ctx.parentUrl,

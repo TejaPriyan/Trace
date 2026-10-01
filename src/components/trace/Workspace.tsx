@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import type { Progress, TraceReport } from "@/lib/trace/types";
 import { ERROR_COPY, type ErrorCode } from "@/lib/trace/types";
-import { addRecent } from "@/lib/trace/recent";
+import { addRecent, getLocalReport, saveLocalReport } from "@/lib/trace/recent";
 import { CrawlProgress } from "./CrawlProgress";
 import { Reveal } from "./Reveal";
 import { TraceProvider, VIEWS, useTrace } from "./TraceContext";
@@ -41,8 +41,13 @@ export function Workspace({ id }: { id: string }) {
     let sawRunning = false;
     let failures = 0;
 
-    // 1. Check local session storage first for instantaneous offline/serverless cache load
+    // 1. Check persistent browser storage first for instantaneous offline/serverless cache load
     try {
+      const local = getLocalReport<TraceReport>(id);
+      if (local) {
+        setState({ kind: "ready", report: local });
+        return;
+      }
       const cached = sessionStorage.getItem(`trace:report:${id}`);
       if (cached) {
         const report = JSON.parse(cached) as TraceReport;
@@ -109,11 +114,12 @@ export function Workspace({ id }: { id: string }) {
               } else if (event === "complete") {
                 const report = data.report as TraceReport;
                 try {
+                  saveLocalReport(report);
                   sessionStorage.setItem(`trace:report:${report.id}`, JSON.stringify(report));
                   sessionStorage.removeItem(`trace:pending:${id}`);
                 } catch {}
                 if (!report.demo) {
-                  addRecent({ id: report.id, hostname: report.hostname, pages: report.stats.pages, at: new Date().toISOString() });
+                  addRecent({ id: report.id, url: report.url, hostname: report.hostname, pages: report.stats.pages, at: new Date().toISOString() });
                 }
                 setState({ kind: "reveal", report });
                 return;
@@ -168,10 +174,11 @@ export function Workspace({ id }: { id: string }) {
         } else if (d.status === "complete") {
           const report = d.report as TraceReport;
           try {
+            saveLocalReport(report);
             sessionStorage.setItem(`trace:report:${report.id}`, JSON.stringify(report));
             sessionStorage.removeItem(`trace:pending:${id}`);
           } catch {}
-          if (!report.demo) addRecent({ id: report.id, hostname: report.hostname, pages: report.stats.pages, at: new Date().toISOString() });
+          if (!report.demo) addRecent({ id: report.id, url: report.url, hostname: report.hostname, pages: report.stats.pages, at: new Date().toISOString() });
           let showReveal = sawRunning;
           if (report.demo) {
             try {

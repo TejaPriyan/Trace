@@ -164,6 +164,13 @@ export function Landing() {
         </button>
         {adv && (
           <div className="mt-3 grid w-full grid-cols-2 gap-3 border border-line bg-panel p-4 text-left sm:grid-cols-3">
+            <div className="col-span-full flex flex-wrap items-center gap-2 border-b border-line pb-3">
+              <Label className="text-dim">Presets:</Label>
+              <button type="button" onClick={() => setSettings({ ...settings, maxPages: 25, maxDepth: 3 })} className="border border-line px-2 py-1 font-mono text-[10px] text-mute hover:border-accent hover:text-accent">Quick (25p · 3d)</button>
+              <button type="button" onClick={() => setSettings({ ...settings, maxPages: 50, maxDepth: 4 })} className="border border-line px-2 py-1 font-mono text-[10px] text-mute hover:border-accent hover:text-accent">Standard (50p · 4d)</button>
+              <button type="button" onClick={() => setSettings({ ...settings, maxPages: 100, maxDepth: 6 })} className="border border-line px-2 py-1 font-mono text-[10px] text-mute hover:border-accent hover:text-accent">Deep Scan (100p · 6d)</button>
+              <button type="button" onClick={() => setSettings({ ...settings, maxPages: 150, maxDepth: 8 })} className="border border-line px-2 py-1 font-mono text-[10px] text-accent border-accent/40 bg-accent/5 hover:border-accent">Maximum (150p · 8d)</button>
+            </div>
             <label className="block">
               <Label>Pages (max {LIMITS.MAX_PAGES})</Label>
               {num("maxPages", 1, LIMITS.MAX_PAGES)}
@@ -194,7 +201,7 @@ export function Landing() {
                 <option value="skip">Skip</option>
               </select>
             </label>
-            <p className="col-span-full text-xs text-mute">Limits are enforced by the server regardless of what is entered here. External domains are never crawled — only recorded.</p>
+            <p className="col-span-full text-xs text-mute">Crawl limits scale up to {LIMITS.MAX_PAGES} pages and depth {LIMITS.MAX_DEPTH}. External domains are never crawled — only fingerprint-recorded.</p>
           </div>
         )}
 
@@ -213,7 +220,10 @@ export function Landing() {
             <ul className="divide-y divide-line border border-line">
               {recent.map((r) => (
                 <li key={r.id}>
-                  <Link href={`/trace/${r.id}`} className="flex items-center justify-between px-3 py-2 text-sm transition hover:bg-panel">
+                  <Link
+                    href={`/trace/${r.id}?url=${encodeURIComponent(r.url || `https://${r.hostname}`)}`}
+                    className="flex items-center justify-between px-3 py-2 text-sm transition hover:bg-panel"
+                  >
                     <span className="font-mono">{r.hostname}</span>
                     <span className="font-mono text-[10px] text-mute">
                       {r.id} · {r.pages} pages

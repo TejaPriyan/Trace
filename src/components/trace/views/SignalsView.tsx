@@ -4,6 +4,7 @@ import { useTrace } from "../TraceContext";
 import { ScoreCards } from "./OverviewView";
 import { CoreWebVitalsRisk } from "../CoreWebVitalsRisk";
 import { SecurityFixGenerator } from "../SecurityFixGenerator";
+import { SiteRecommendations } from "../SiteRecommendations";
 import { Label, SectionTitle, cx } from "../ui";
 import type { Check, SignalGroup } from "@/lib/trace/types";
 
@@ -79,11 +80,15 @@ export function SignalsView() {
       </section>
 
       <section>
+        <SiteRecommendations report={report} />
+      </section>
+
+      <section>
         <CoreWebVitalsRisk report={report} />
       </section>
 
       <section>
-        <SecurityFixGenerator />
+        <SecurityFixGenerator report={report} />
       </section>
 
       <section>
