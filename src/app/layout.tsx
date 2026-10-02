@@ -46,6 +46,13 @@ export const metadata: Metadata = {
   verification: {
     google: "google2af4e1ed3191321d",
   },
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon.png", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png" }],
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
