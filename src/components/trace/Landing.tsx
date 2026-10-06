@@ -250,9 +250,18 @@ export function Landing() {
         </p>
       </section>
 
-      <footer className="relative z-10 border-t border-line px-5 py-4 sm:px-8">
-        <div className="mx-auto flex max-w-5xl items-center justify-between font-mono text-[11px]">
-          <span className="text-dim uppercase tracking-wider">TRACE â€” The X-ray for the web</span>
+            <footer className="relative z-10 border-t border-line px-5 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-5xl flex-col sm:flex-row items-center justify-between gap-3 font-mono text-[11px]">
+          <span className="text-dim uppercase tracking-wider">TRACE — The X-ray for the web</span>
+          <a
+            href="https://www.buymeacoffee.com/TejaPriyan"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded border border-line bg-panel px-3 py-1 text-mute hover:border-[#FFDD00] hover:text-[#FFDD00] transition-colors"
+          >
+            <span>??</span>
+            <span>Buy me a pizza</span>
+          </a>
           <span className="text-right tracking-wider text-mute uppercase">
             By <span className="font-semibold text-accent">Teja Priyan</span>
           </span>
