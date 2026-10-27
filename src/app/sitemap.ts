@@ -5,6 +5,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
 
   return [
+    ...["about.html", "contact.html", "privacy.html", "terms.html", "guides/index.html", "guides/first-audit.html", "guides/read-performance-findings.html"].map((path) => ({ url: `${baseUrl}/${path}`, lastModified: now })),
     {
       url: baseUrl,
       lastModified: now,
