@@ -1,0 +1,16 @@
+{
+  "publisherId": "ca-pub-8817990111687358",
+  "siteUrl": "https://tracewebsite.vercel.app",
+  "adServingEnabled": false,
+  "reviewPages": [
+    "index.html",
+    "guides/index.html"
+  ],
+  "excludedFromAdServing": [
+    "privacy.html",
+    "terms.html",
+    "contact.html",
+    "trace/*",
+    "compare"
+  ]
+}
