@@ -5,11 +5,13 @@ import { Badge, Empty, Label, SectionTitle, cx } from "../ui";
 
 export function FindingsView() {
   const { report, focusKey, pageById, openXray } = useTrace();
-  const [open, setOpen] = useState<string | null>(focusKey);
+  const [openState, setOpenState] = useState<{ fk: string | null; id: string | null }>({ fk: focusKey, id: focusKey });
+  const open = openState.fk === focusKey ? openState.id : (focusKey ?? openState.id);
+  const setOpen = (id: string | null) => setOpenState({ fk: focusKey, id });
   const ref = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
-    if (focusKey) setOpen(focusKey);
-    setTimeout(() => ref.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 60);
+    const t = setTimeout(() => ref.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 60);
+    return () => clearTimeout(t);
   }, [focusKey]);
   const Pages = ({ ids }: { ids: string[] }) =>
     ids.length ? (

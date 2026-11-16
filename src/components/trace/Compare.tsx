@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 import { Badge, Btn, Label, SectionTitle, cx } from "./ui";
-import { getRecent, type RecentTrace } from "@/lib/trace/recent";
+import { getRecentServerSnapshot, getRecentSnapshot, subscribeRecent } from "@/lib/trace/recent";
 import type { TraceReport } from "@/lib/trace/types";
 
 async function loadReport(input: string, status: (s: string) => void): Promise<TraceReport> {
@@ -194,8 +194,7 @@ export function Compare() {
   const [sb, setSb] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [res, setRes] = useState<[TraceReport, TraceReport] | null>(null);
-  const [recent, setRecent] = useState<RecentTrace[]>([]);
-  useEffect(() => setRecent(getRecent()), []);
+  const recent = useSyncExternalStore(subscribeRecent, getRecentSnapshot, getRecentServerSnapshot);
 
   async function run() {
     setErr(null);

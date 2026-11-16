@@ -15,10 +15,14 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 export function CrawlProgress({ progress, id }: { progress: Progress; id: string }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => progress.startedAt);
   useEffect(() => {
+    const init = setTimeout(() => setNow(Date.now()), 0);
     const t = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(init);
+      clearInterval(t);
+    };
   }, []);
   const idx = PHASES.indexOf(progress.phase as Phase);
   const elapsed = Math.max(0, Math.round((now - progress.startedAt) / 1000));

@@ -64,6 +64,7 @@ export function SocialCardPreview({ page }: { page: PageReport }) {
         <div className="overflow-hidden rounded-xl border border-line bg-panel text-left font-sans text-xs">
           {img ? (
             <div className="relative h-28 w-full overflow-hidden bg-panel2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- external og:image URL from crawled site */}
               <img src={img} alt="Card preview" className="h-full w-full object-cover" />
             </div>
           ) : (
@@ -84,6 +85,7 @@ export function SocialCardPreview({ page }: { page: PageReport }) {
         <div className="overflow-hidden rounded border border-line bg-panel text-left font-sans text-xs shadow-sm">
           {img ? (
             <div className="relative h-28 w-full overflow-hidden bg-panel2">
+              {/* eslint-disable-next-line @next/next/no-img-element -- external og:image URL from crawled site */}
               <img src={img} alt="LinkedIn preview" className="h-full w-full object-cover" />
             </div>
           ) : (

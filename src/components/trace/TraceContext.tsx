@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { PageReport, PageType, TechCategory, TraceReport } from "@/lib/trace/types";
 
 export type ViewKey = "overview" | "map" | "pages" | "journeys" | "content" | "technology" | "signals" | "sources" | "findings" | "report";
@@ -48,8 +48,24 @@ export function useTrace() {
   return c;
 }
 
+function subscribeViewHash(cb: () => void) {
+  window.addEventListener("hashchange", cb);
+  window.addEventListener("trace:view", cb);
+  return () => {
+    window.removeEventListener("hashchange", cb);
+    window.removeEventListener("trace:view", cb);
+  };
+}
+
+function getViewSnapshot(): ViewKey {
+  const h = window.location.hash.replace("#", "") as ViewKey;
+  return VIEWS.some((v) => v.key === h) ? h : "overview";
+}
+
+const getServerViewSnapshot = (): ViewKey => "overview";
+
 export function TraceProvider({ report, children }: { report: TraceReport; children: ReactNode }) {
-  const [view, setViewState] = useState<ViewKey>("overview");
+  const view = useSyncExternalStore(subscribeViewHash, getViewSnapshot, getServerViewSnapshot);
   const [xrayId, setXray] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -57,20 +73,9 @@ export function TraceProvider({ report, children }: { report: TraceReport; child
   const pageById = useMemo(() => new Map(report.pages.map((p) => [p.id, p])), [report]);
   const techCat = useMemo(() => new Map(report.technologies.map((t) => [t.name, t.category])), [report]);
 
-  useEffect(() => {
-    const h = window.location.hash.replace("#", "") as ViewKey;
-    if (VIEWS.some((v) => v.key === h)) setViewState(h);
-    const onHash = () => {
-      const x = window.location.hash.replace("#", "") as ViewKey;
-      if (VIEWS.some((v) => v.key === x)) setViewState(x);
-    };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
   const setView = useCallback((v: ViewKey) => {
-    setViewState(v);
     history.replaceState(null, "", `#${v}`);
+    window.dispatchEvent(new Event("trace:view"));
   }, []);
   const goto = useCallback(
     (v: ViewKey, fk?: string | null) => {

@@ -70,6 +70,24 @@ function once(
   return new Promise((resolve, reject) => {
     const lib = target.protocol === "https:" ? https : http;
     let settled = false;
+    let currentRes: http.IncomingMessage | null = null;
+    let decompressor: (zlib.Gunzip | zlib.Inflate | zlib.BrotliDecompress) | null = null;
+
+    const cleanupStreams = () => {
+      if (currentRes && decompressor) {
+        currentRes.unpipe(decompressor);
+      }
+      if (decompressor && !decompressor.destroyed) {
+        decompressor.destroy();
+      }
+      if (currentRes && !currentRes.destroyed) {
+        currentRes.destroy();
+      }
+      if (!req.destroyed) {
+        req.destroy();
+      }
+    };
+
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
@@ -78,8 +96,10 @@ function once(
     };
     const remaining = Math.max(500, deadline - Date.now());
     const timer = setTimeout(() => {
-      req.destroy();
-      finish(() => reject(new TraceError("TIMEOUT", "Request timed out")));
+      finish(() => {
+        cleanupStreams();
+        reject(new TraceError("TIMEOUT", "Request timed out"));
+      });
     }, remaining);
 
     const req = lib.request(
@@ -106,6 +126,7 @@ function once(
         },
       },
       (res) => {
+        currentRes = res;
         const headers = flattenHeaders(res.headers);
         const status = res.statusCode ?? 0;
         if (status >= 300 && status < 400 && headers.location) {
@@ -113,35 +134,53 @@ function once(
           return finish(() => resolve({ status, headers, body: Buffer.alloc(0), truncated: false, skippedBody: true }));
         }
         if (opts.bodyFilter && !opts.bodyFilter(headers)) {
-          res.destroy();
-          return finish(() => resolve({ status, headers, body: Buffer.alloc(0), truncated: false, skippedBody: true }));
+          return finish(() => {
+            cleanupStreams();
+            resolve({ status, headers, body: Buffer.alloc(0), truncated: false, skippedBody: true });
+          });
         }
-        let stream: NodeJS.ReadableStream = res;
         const enc = (headers["content-encoding"] || "").toLowerCase();
-        if (enc.includes("gzip")) stream = res.pipe(zlib.createGunzip());
-        else if (enc.includes("deflate")) stream = res.pipe(zlib.createInflate());
-        else if (enc.includes("br")) stream = res.pipe(zlib.createBrotliDecompress());
+        if (enc.includes("gzip")) decompressor = zlib.createGunzip();
+        else if (enc.includes("deflate")) decompressor = zlib.createInflate();
+        else if (enc.includes("br")) decompressor = zlib.createBrotliDecompress();
+
+        const stream: NodeJS.ReadableStream = decompressor ? res.pipe(decompressor) : res;
         const chunks: Buffer[] = [];
         let size = 0;
         let truncated = false;
         stream.on("data", (c: Buffer) => {
-          if (truncated) return;
+          if (settled || truncated) return;
           size += c.length;
           if (size > maxBytes) {
             truncated = true;
             chunks.push(c.subarray(0, c.length - (size - maxBytes)));
-            res.destroy();
-            return finish(() => resolve({ status, headers, body: Buffer.concat(chunks), truncated: true, skippedBody: false }));
+            return finish(() => {
+              cleanupStreams();
+              resolve({ status, headers, body: Buffer.concat(chunks), truncated: true, skippedBody: false });
+            });
           }
           chunks.push(c);
         });
         stream.on("end", () => finish(() => resolve({ status, headers, body: Buffer.concat(chunks), truncated, skippedBody: false })));
-        stream.on("error", () => finish(() => resolve({ status, headers, body: Buffer.concat(chunks), truncated, skippedBody: false })));
-        res.on("error", () => finish(() => resolve({ status, headers, body: Buffer.concat(chunks), truncated, skippedBody: false })));
+        if (decompressor) {
+          decompressor.on("error", (err: Error) => {
+            finish(() => {
+              cleanupStreams();
+              reject(new TraceError("UNREACHABLE", `Failed to decompress response: ${err.message}`));
+            });
+          });
+        }
+        res.on("error", (err: Error) => {
+          finish(() => {
+            cleanupStreams();
+            reject(new TraceError("UNREACHABLE", err?.message ? `Response stream failed: ${err.message}` : "Response stream failed"));
+          });
+        });
       },
     );
     req.on("error", (e: NodeJS.ErrnoException) => {
       finish(() => {
+        cleanupStreams();
         if (e.message === "BLOCKED_ADDRESS") return reject(new TraceError("BLOCKED", "Destination resolves to a private address"));
         if (e.code === "ENOTFOUND" || e.code === "EAI_AGAIN") return reject(new TraceError("UNREACHABLE", "Hostname could not be resolved"));
         if (e.code === "ETIMEDOUT") return reject(new TraceError("TIMEOUT", "Connection timed out"));

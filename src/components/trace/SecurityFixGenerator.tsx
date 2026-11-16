@@ -20,7 +20,7 @@ export function SecurityFixGenerator({ report }: { report?: TraceReport }) {
   const [onlyMissing, setOnlyMissing] = useState(true);
 
   // Analyze the live site's headers from page 0
-  const firstHeaders = report?.pages[0]?.headers ?? {};
+  const firstHeaders = useMemo(() => report?.pages[0]?.headers ?? {}, [report]);
   const hostname = report?.hostname || "example.com";
 
   // Discover detected external origins to whitelist in CSP

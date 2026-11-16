@@ -1,7 +1,7 @@
 {
   "name": "trace-website-intelligence-platform",
   "version": "1.0.0",
-  "description": "TRACE — Interactive Website Intelligence, Architectural Visualization, and Technical Audit Platform",
+  "description": "TRACE \u2014 Interactive Website Intelligence, Architectural Visualization, and Technical Audit Platform",
   "author": "Teja Priyan <teja1616150@gmail.com>",
   "license": "MIT",
   "homepage": "https://tracewebsite.vercel.app",
@@ -26,13 +26,15 @@
     "typescript"
   ],
   "private": true,
-
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node tests/run.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@types/d3-force": "^3.0.10",

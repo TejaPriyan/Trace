@@ -49,6 +49,22 @@ export function PageXray() {
   );
 }
 
+function PageIdList({ ids, pageById, onSelect }: { ids: string[]; pageById: Map<string, PageReport>; onSelect: (id: string) => void }) {
+  if (ids.length === 0) return <div className="text-xs text-dim">None</div>;
+  return (
+    <ul className="space-y-0.5">
+      {ids.slice(0, 14).map((id) => (
+        <li key={id}>
+          <button onClick={() => onSelect(id)} className="block max-w-full truncate font-mono text-xs text-mute hover:text-accent">
+            {pageById.get(id)?.path}
+          </button>
+        </li>
+      ))}
+      {ids.length > 14 && <li className="text-[11px] text-dim">+{ids.length - 14} more</li>}
+    </ul>
+  );
+}
+
 function XrayBody({ page, closeRef }: { page: PageReport; closeRef: React.RefObject<HTMLButtonElement | null> }) {
   const { report, pageById, openXray, goto, setSelectedNode } = useTrace();
   const [previewTab, setPreviewTab] = useState<"wireframe" | "cards">("wireframe");
@@ -61,22 +77,6 @@ function XrayBody({ page, closeRef }: { page: PageReport; closeRef: React.RefObj
   const reciprocal = page.outgoing.filter((id) => page.incoming.includes(id));
   const related = [...new Set([...reciprocal, ...page.outgoing])].slice(0, 6);
   const broken = page.broken;
-  const jump = (id: string) => openXray(id);
-  const List = ({ ids }: { ids: string[] }) =>
-    ids.length === 0 ? (
-      <div className="text-xs text-dim">None</div>
-    ) : (
-      <ul className="space-y-0.5">
-        {ids.slice(0, 14).map((id) => (
-          <li key={id}>
-            <button onClick={() => jump(id)} className="block max-w-full truncate font-mono text-xs text-mute hover:text-accent">
-              {pageById.get(id)?.path}
-            </button>
-          </li>
-        ))}
-        {ids.length > 14 && <li className="text-[11px] text-dim">+{ids.length - 14} more</li>}
-      </ul>
-    );
   return (
     <>
       <div className="flex items-start gap-3 border-b border-line px-5 py-4">
@@ -254,15 +254,15 @@ function XrayBody({ page, closeRef }: { page: PageReport; closeRef: React.RefObj
       <div className="grid gap-5 border-t border-line bg-panel px-5 py-4 sm:grid-cols-3">
         <div>
           <Label className="mb-2">← {page.incoming.length} incoming links</Label>
-          <List ids={page.incoming} />
+          <PageIdList ids={page.incoming} pageById={pageById} onSelect={openXray} />
         </div>
         <div>
           <Label className="mb-2">→ {page.outgoing.length} outgoing links</Label>
-          <List ids={page.outgoing} />
+          <PageIdList ids={page.outgoing} pageById={pageById} onSelect={openXray} />
         </div>
         <div>
           <Label className="mb-2">Related</Label>
-          <List ids={related} />
+          <PageIdList ids={related} pageById={pageById} onSelect={openXray} />
           {reciprocal.length > 0 && <div className="mt-1 text-[11px] text-dim">{reciprocal.length} linked in both directions</div>}
         </div>
       </div>

@@ -1,14 +1,21 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+function subscribeTheme(cb: () => void) {
+  const obs = new MutationObserver(cb);
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => obs.disconnect();
+}
+
+const getTheme = (): "dark" | "light" =>
+  document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+
+const getServerTheme = (): "dark" | "light" => "dark";
 
 export function ThemeToggle({ className = "" }: { className?: string }) {
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
-  useEffect(() => {
-    setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
-  }, []);
+  const theme = useSyncExternalStore(subscribeTheme, getTheme, getServerTheme);
   const toggle = () => {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
     try {
       localStorage.setItem("trace.theme", next);

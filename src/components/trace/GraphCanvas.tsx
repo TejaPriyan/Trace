@@ -47,11 +47,15 @@ export function GraphCanvas({
   const wrap = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
-  const [overrides, setOverrides] = useState<Record<string, Pos>>({});
+  const overrideKey = `${resetSignal}:${layout}`;
+  const [overrideState, setOverrideState] = useState<{ key: string; map: Record<string, Pos> }>({ key: overrideKey, map: {} });
+  const overrides = useMemo(() => (overrideState.key === overrideKey ? overrideState.map : {}), [overrideState, overrideKey]);
   const [hover, setHover] = useState<string | null>(null);
   const drag = useRef<{ kind: "pan" | "node"; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
   const viewRef = useRef(view);
-  viewRef.current = view;
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   const key = useMemo(() => nodes.map((n) => n.id).join("|") + "#" + layout, [nodes, layout]);
   const base = useMemo(() => computeLayout(nodes, edges, layout, parentOf), [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -121,16 +125,17 @@ export function GraphCanvas({
 
   // refit on layout / node-set / reset / explicit fit request
   useEffect(() => {
-    fit();
+    const id = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(id);
   }, [base, resetSignal, fitSignal, size.w, size.h]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    setOverrides({});
-  }, [resetSignal, layout]);
 
   useEffect(() => {
     if (!centerOn) return;
-    const p = pos(centerOn.id);
-    setView((v) => ({ ...v, x: size.w / 2 - p.x * 1.1, y: size.h / 2 - p.y * 1.1, k: 1.1 }));
+    const id = requestAnimationFrame(() => {
+      const p = pos(centerOn.id);
+      setView((v) => ({ ...v, x: size.w / 2 - p.x * 1.1, y: size.h / 2 - p.y * 1.1, k: 1.1 }));
+    });
+    return () => cancelAnimationFrame(id);
   }, [centerOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // wheel zoom (non-passive)
@@ -201,7 +206,14 @@ export function GraphCanvas({
     if (!d.moved && Math.hypot(dx, dy) > 4) d.moved = true;
     if (!d.moved) return;
     if (d.kind === "pan") setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy }));
-    else if (d.id) setOverrides((o) => ({ ...o, [d.id!]: { x: d.ox + dx / viewRef.current.k, y: d.oy + dy / viewRef.current.k } }));
+    else if (d.id)
+      setOverrideState((prev) => ({
+        key: overrideKey,
+        map: {
+          ...(prev.key === overrideKey ? prev.map : {}),
+          [d.id!]: { x: d.ox + dx / viewRef.current.k, y: d.oy + dy / viewRef.current.k },
+        },
+      }));
   };
   const onUp = () => {
     const d = drag.current;

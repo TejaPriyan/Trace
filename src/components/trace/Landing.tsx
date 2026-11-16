@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -7,7 +7,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { Btn, Label, cx, fmtDate } from "./ui";
 import { DEFAULT_SETTINGS, LIMITS } from "@/lib/trace/limits";
 import type { CrawlSettings } from "@/lib/trace/types";
-import { getRecent, type RecentTrace } from "@/lib/trace/recent";
+import { getRecentServerSnapshot, getRecentSnapshot, subscribeRecent } from "@/lib/trace/recent";
 
 const FEATURES = [
   ["MAP", "Understand the architecture."],
@@ -24,8 +24,7 @@ export function Landing() {
   const [existing, setExisting] = useState<{ id: string; createdAt: string } | null>(null);
   const [adv, setAdv] = useState(false);
   const [settings, setSettings] = useState<CrawlSettings>(DEFAULT_SETTINGS);
-  const [recent, setRecent] = useState<RecentTrace[]>([]);
-  useEffect(() => setRecent(getRecent()), []);
+  const recent = useSyncExternalStore(subscribeRecent, getRecentSnapshot, getRecentServerSnapshot);
 
   async function submit(force = false) {
     setErr(null);
@@ -250,21 +249,36 @@ export function Landing() {
         </p>
       </section>
 
-            <footer className="relative z-10 border-t border-line px-5 py-4 sm:px-8">
-        <div className="mx-auto flex max-w-5xl flex-col sm:flex-row items-center justify-between gap-3 font-mono text-[11px]">
-          <span className="text-dim uppercase tracking-wider">TRACE � The X-ray for the web</span>
-          <a
-            href="https://www.buymeacoffee.com/TejaPriyan"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded border border-line bg-panel px-3 py-1 text-mute hover:border-[#FFDD00] hover:text-[#FFDD00] transition-colors"
-          >
-            <span>🍕</span>
-            <span>Buy me a pizza</span>
-          </a>
-          <span className="text-right tracking-wider text-mute uppercase">
-            By <span className="font-semibold text-accent">Teja Priyan</span>
-          </span>
+      <footer className="relative z-10 border-t border-line px-5 py-6 sm:px-8">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 font-mono text-[11px]">
+          <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <span className="uppercase tracking-wider text-dim">TRACE — The X-ray for the web</span>
+            <a
+              href="https://www.buymeacoffee.com/TejaPriyan"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded border border-line bg-panel px-3 py-1 text-mute transition-colors hover:border-[#FFDD00] hover:text-[#FFDD00]"
+            >
+              <span>🍕</span>
+              <span>Buy me a pizza</span>
+            </a>
+            <span className="text-right uppercase tracking-wider text-mute">
+              By <span className="font-semibold text-accent">Teja Priyan</span>
+            </span>
+          </div>
+          <nav aria-label="Site information" className="flex flex-wrap items-center justify-center gap-5 border-t border-line/60 pt-3 font-sans text-xs text-mute sm:justify-start">
+            {[
+              ["guides/index.html", "Guides"],
+              ["about.html", "About"],
+              ["contact.html", "Contact"],
+              ["privacy.html", "Privacy"],
+              ["terms.html", "Terms"],
+            ].map(([path, label]) => (
+              <a key={path} href={`/${path}`} className="underline underline-offset-4 transition-colors hover:text-accent">
+                {label}
+              </a>
+            ))}
+          </nav>
         </div>
       </footer>
 

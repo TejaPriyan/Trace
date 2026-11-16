@@ -51,9 +51,14 @@ export function MapView() {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
-    if (window.innerWidth < 768) setList(true);
+    const init = setTimeout(() => {
+      if (window.innerWidth < 768) setList(true);
+    }, 0);
     const t = setTimeout(() => setAssemble(false), 4500);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(init);
+      clearTimeout(t);
+    };
   }, []);
 
   const parentOf = useMemo(() => {

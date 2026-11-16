@@ -6,11 +6,10 @@ import type { DomainCategory } from "@/lib/trace/types";
 
 export function SourcesView() {
   const { report, focusKey } = useTrace();
-  const [tab, setTab] = useState<"domains" | "claims">(focusKey?.startsWith("claim:") ? "claims" : "domains");
-  useEffect(() => {
-    if (focusKey?.startsWith("claim:")) setTab("claims");
-    else if (focusKey?.startsWith("domain:")) setTab("domains");
-  }, [focusKey]);
+  const derivedTab: "domains" | "claims" | null = focusKey?.startsWith("claim:") ? "claims" : focusKey?.startsWith("domain:") ? "domains" : null;
+  const [tabState, setTabState] = useState<{ fk: string | null; tab: "domains" | "claims" }>({ fk: focusKey, tab: derivedTab ?? "domains" });
+  const tab = tabState.fk === focusKey ? tabState.tab : (derivedTab ?? tabState.tab);
+  const setTab = (next: "domains" | "claims") => setTabState({ fk: focusKey, tab: next });
   return (
     <div className="mx-auto max-w-6xl p-5 sm:p-8">
       <SectionTitle kicker="Sources" title="Where information comes from" />
@@ -29,10 +28,10 @@ export function SourcesView() {
 function Domains() {
   const { report, pageById, openXray, focusKey } = useTrace();
   const [cat, setCat] = useState<DomainCategory | null>(null);
-  const [sel, setSel] = useState<string | null>(focusKey?.startsWith("domain:") ? focusKey.slice(7) : null);
-  useEffect(() => {
-    if (focusKey?.startsWith("domain:")) setSel(focusKey.slice(7));
-  }, [focusKey]);
+  const derivedSel = focusKey?.startsWith("domain:") ? focusKey.slice(7) : null;
+  const [selState, setSelState] = useState<{ fk: string | null; sel: string | null }>({ fk: focusKey, sel: derivedSel });
+  const sel = selState.fk === focusKey ? selState.sel : (derivedSel ?? selState.sel);
+  const setSel = (next: string | null) => setSelState({ fk: focusKey, sel: next });
   const cats = useMemo(() => [...new Set(report.sources.map((d) => d.category))], [report]);
   const list = report.sources.filter((d) => !cat || d.category === cat);
   const cur = report.sources.find((d) => d.domain === sel);

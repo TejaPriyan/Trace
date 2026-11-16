@@ -12,13 +12,28 @@ import { urlKey } from "./graph";
 import { releaseJob } from "./rate-limit";
 import { buildDemoReport } from "./demo";
 
+const MAX_MEMORY_REPORTS = 200;
+const MAX_MEMORY_WEBSITES = 500;
+
+export type TraceEvent =
+  | { type: "progress"; progress: Progress }
+  | { type: "complete"; report: TraceReport }
+  | { type: "error"; error: { code: ErrorCode; message: string } };
+
+interface JobRecord {
+  progress: Progress;
+  listeners: Set<(event: TraceEvent) => void>;
+}
+
 const g = globalThis as typeof globalThis & {
-  __traceJobs?: Map<string, Progress>;
+  __traceJobs?: Map<string, JobRecord>;
   __traceMemoryReports?: Map<string, TraceReport>;
+  __traceMemoryReportSavedAt?: Map<string, number>;
   __traceMemoryWebsites?: Map<string, { id: string; url: string; urlKey: string; createdAt: Date }>;
 };
-const jobs = (g.__traceJobs ??= new Map<string, Progress>());
+const jobs = (g.__traceJobs ??= new Map<string, JobRecord>());
 const memoryReports = (g.__traceMemoryReports ??= new Map<string, TraceReport>());
+const memoryReportSavedAt = (g.__traceMemoryReportSavedAt ??= new Map<string, number>());
 const memoryWebsites = (g.__traceMemoryWebsites ??= new Map<string, { id: string; url: string; urlKey: string; createdAt: Date }>());
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -30,17 +45,47 @@ export function newTraceId(): string {
 }
 export const isTraceId = (id: string) => id === "demo" || /^TRC-[0-9A-Z]{8}$/.test(id);
 
+export function evictMemoryCache(now = Date.now()) {
+  for (const [id, r] of memoryReports) {
+    const parsed = Date.parse(r.createdAt);
+    const ts = Number.isFinite(parsed) ? parsed : (memoryReportSavedAt.get(id) ?? now);
+    if (now - ts >= LIMITS.RETENTION_MS) {
+      memoryReports.delete(id);
+      memoryReportSavedAt.delete(id);
+    }
+  }
+  while (memoryReports.size > MAX_MEMORY_REPORTS) {
+    const oldestId = memoryReports.keys().next().value;
+    if (oldestId === undefined) break;
+    memoryReports.delete(oldestId);
+    memoryReportSavedAt.delete(oldestId);
+  }
+  for (const [key, entry] of memoryWebsites) {
+    if (now - entry.createdAt.getTime() >= LIMITS.CACHE_TTL_MS || !memoryReports.has(entry.id)) {
+      memoryWebsites.delete(key);
+    }
+  }
+  while (memoryWebsites.size > MAX_MEMORY_WEBSITES) {
+    const oldestKey = memoryWebsites.keys().next().value;
+    if (oldestKey === undefined) break;
+    memoryWebsites.delete(oldestKey);
+  }
+}
+
 export async function findExisting(url: string): Promise<{ id: string; createdAt: string } | null> {
   const key = urlKey(url);
-  if (!db) {
+  const now = Date.now();
+  evictMemoryCache(now);
+  const fromMemory = () => {
     const existing = memoryWebsites.get(key);
-    if (existing && Date.now() - existing.createdAt.getTime() < LIMITS.CACHE_TTL_MS) {
+    if (existing && now - existing.createdAt.getTime() < LIMITS.CACHE_TTL_MS && memoryReports.has(existing.id)) {
       return { id: existing.id, createdAt: existing.createdAt.toISOString() };
     }
     return null;
-  }
+  };
+  if (!db) return fromMemory();
   try {
-    const since = new Date(Date.now() - LIMITS.CACHE_TTL_MS);
+    const since = new Date(now - LIMITS.CACHE_TTL_MS);
     const rows = await db
       .select({ id: t.websites.traceId, createdAt: t.websites.createdAt })
       .from(t.websites)
@@ -49,32 +94,34 @@ export async function findExisting(url: string): Promise<{ id: string; createdAt
       .limit(1);
     return rows[0] ? { id: rows[0].id, createdAt: rows[0].createdAt.toISOString() } : null;
   } catch {
-    return null;
+    return fromMemory();
   }
 }
 
-export async function cleanupOld() {
+export async function cleanupOld(now = Date.now()) {
+  evictMemoryCache(now);
   if (!db) return;
   try {
-    await db.delete(t.websites).where(lt(t.websites.createdAt, new Date(Date.now() - LIMITS.RETENTION_MS)));
+    await db.delete(t.websites).where(lt(t.websites.createdAt, new Date(now - LIMITS.RETENTION_MS)));
   } catch {}
 }
 
-export async function startTrace(opts: { url: string; settings: CrawlSettings; limiterKey: string; host: string }): Promise<string> {
-  const id = newTraceId();
-  const u = new URL(opts.url);
-  const key = urlKey(opts.url);
-  memoryWebsites.set(key, { id, url: opts.url, urlKey: key, createdAt: new Date() });
+async function initTraceJob(id: string, url: string, settings: CrawlSettings): Promise<JobRecord> {
+  const u = new URL(url);
+  const key = urlKey(url);
   if (db) {
     try {
-      await db.insert(t.websites).values({
-        traceId: id,
-        url: opts.url,
-        urlKey: key,
-        hostname: u.hostname.replace(/^www\./, ""),
-        status: "running",
-        settings: opts.settings as unknown as Record<string, unknown>,
-      });
+      await db
+        .insert(t.websites)
+        .values({
+          traceId: id,
+          url,
+          urlKey: key,
+          hostname: u.hostname.replace(/^www\./, ""),
+          status: "running",
+          settings: settings as unknown as Record<string, unknown>,
+        })
+        .onConflictDoNothing({ target: t.websites.traceId });
     } catch (e) {
       console.warn("[trace] DB insert failed, using memory store", e);
     }
@@ -86,73 +133,49 @@ export async function startTrace(opts: { url: string; settings: CrawlSettings; l
     queued: 0,
     depth: 0,
     externalDomains: 0,
-    maxPages: opts.settings.maxPages,
+    maxPages: settings.maxPages,
     log: [],
     startedAt: Date.now(),
     message: "Validating destination",
     robots: null,
     error: null,
   };
-  jobs.set(id, progress);
-  void executeTrace({
-    id,
-    url: opts.url,
-    settings: opts.settings,
-    onProgress: (p) => Object.assign(progress, p),
-  })
-    .catch(() => {})
-    .finally(() => {
-      releaseJob(opts.limiterKey, opts.host);
-      setTimeout(() => jobs.delete(id), 90_000);
-    });
-  return id;
+  const record: JobRecord = { progress, listeners: new Set() };
+  jobs.set(id, record);
+  return record;
 }
 
-export async function executeTrace(opts: {
-  id?: string;
-  url: string;
-  settings: CrawlSettings;
-  onPhase?: (phase: Phase, msg?: string) => void;
-  onProgress?: (progress: Progress) => void;
-}): Promise<TraceReport> {
-  const id = opts.id ?? newTraceId();
-  const u = new URL(opts.url);
-  const key = urlKey(opts.url);
-  memoryWebsites.set(key, { id, url: opts.url, urlKey: key, createdAt: new Date() });
-  if (db) {
-    try {
-      await db.insert(t.websites).values({
-        traceId: id,
-        url: opts.url,
-        urlKey: key,
-        hostname: u.hostname.replace(/^www\./, ""),
-        status: "running",
-        settings: opts.settings as unknown as Record<string, unknown>,
-      });
-    } catch {}
-  }
+async function runTraceJob(
+  id: string,
+  record: JobRecord,
+  opts: {
+    url: string;
+    settings: CrawlSettings;
+    onPhase?: (phase: Phase, msg?: string) => void;
+    onProgress?: (progress: Progress) => void;
+  },
+): Promise<TraceReport> {
+  const { progress, listeners } = record;
 
-  const progress: Progress = {
-    phase: "connecting",
-    discovered: 0,
-    analyzed: 0,
-    queued: 0,
-    depth: 0,
-    externalDomains: 0,
-    maxPages: opts.settings.maxPages,
-    log: [],
-    startedAt: Date.now(),
-    message: "Validating destination",
-    robots: null,
-    error: null,
+  const emitEvent = (ev: TraceEvent) => {
+    for (const listener of [...listeners]) {
+      try {
+        listener(ev);
+      } catch {}
+    }
   };
-  jobs.set(id, progress);
+
+  const emitProgress = () => {
+    const snap = { ...progress };
+    opts.onProgress?.(snap);
+    emitEvent({ type: "progress", progress: snap });
+  };
 
   const setPhase = (ph: Phase, msg?: string) => {
     progress.phase = ph;
     if (msg !== undefined) progress.message = msg;
     opts.onPhase?.(ph, msg);
-    opts.onProgress?.({ ...progress });
+    emitProgress();
   };
 
   try {
@@ -162,7 +185,7 @@ export async function executeTrace(opts: {
       },
       onRobots: (s) => {
         progress.robots = s;
-        opts.onProgress?.({ ...progress });
+        emitProgress();
       },
       onUpdate: (u) => {
         progress.discovered = u.discovered;
@@ -171,7 +194,7 @@ export async function executeTrace(opts: {
         progress.depth = u.depth;
         progress.externalDomains = u.externalDomains;
         pushLog(progress.log, u.log);
-        opts.onProgress?.({ ...progress });
+        emitProgress();
       },
     });
 
@@ -195,6 +218,8 @@ export async function executeTrace(opts: {
     progress.phase = "done";
     opts.onPhase?.("done");
     opts.onProgress?.({ ...progress });
+    emitEvent({ type: "complete", report });
+    listeners.clear();
     return report;
   } catch (e) {
     const code: ErrorCode = e instanceof TraceError ? e.code : "INTERNAL";
@@ -207,17 +232,85 @@ export async function executeTrace(opts: {
     if (db) {
       await db.update(t.websites).set({ status: "failed", error: { code, message } }).where(eq(t.websites.traceId, id)).catch(() => {});
     }
+    emitEvent({ type: "error", error: { code, message } });
+    listeners.clear();
     throw e;
   } finally {
-    setTimeout(() => jobs.delete(id), 90_000);
+    const timer = setTimeout(() => jobs.delete(id), 90_000);
+    timer.unref?.();
   }
 }
 
-export function saveReportInMemory(r: TraceReport) {
-  memoryReports.set(r.id, r);
+export async function startTrace(opts: { url: string; settings: CrawlSettings; limiterKey: string; host: string }): Promise<string> {
+  const id = newTraceId();
+  const record = await initTraceJob(id, opts.url, opts.settings);
+  void runTraceJob(id, record, {
+    url: opts.url,
+    settings: opts.settings,
+  })
+    .catch(() => {})
+    .finally(() => {
+      releaseJob(opts.limiterKey, opts.host);
+    });
+  return id;
 }
 
-export function getMemoryReport(id: string): TraceReport | undefined {
+export async function executeTrace(opts: {
+  id?: string;
+  url: string;
+  settings: CrawlSettings;
+  onPhase?: (phase: Phase, msg?: string) => void;
+  onProgress?: (progress: Progress) => void;
+}): Promise<TraceReport> {
+  const id = opts.id ?? newTraceId();
+  const record = await initTraceJob(id, opts.url, opts.settings);
+  return runTraceJob(id, record, opts);
+}
+
+export function subscribeTrace(id: string, listener: (event: TraceEvent) => void): (() => void) | null {
+  evictMemoryCache();
+  const record = jobs.get(id);
+  if (!record) return null;
+  if (record.progress.phase === "done") {
+    const report = memoryReports.get(id);
+    if (!report) return null;
+    listener({ type: "complete", report });
+    return () => {};
+  }
+  if (record.progress.phase === "error") {
+    listener({
+      type: "error",
+      error: {
+        code: (record.progress.error?.code as ErrorCode) ?? "INTERNAL",
+        message: record.progress.error?.message ?? "Unexpected error",
+      },
+    });
+    return () => {};
+  }
+  record.listeners.add(listener);
+  listener({ type: "progress", progress: { ...record.progress } });
+  return () => {
+    record.listeners.delete(listener);
+  };
+}
+
+export function saveReportInMemory(r: TraceReport, now = Date.now()) {
+  evictMemoryCache(now);
+  const parsed = Date.parse(r.createdAt);
+  const createdMs = Number.isFinite(parsed) ? parsed : now;
+  if (now - createdMs < LIMITS.RETENTION_MS) {
+    memoryReports.set(r.id, r);
+    memoryReportSavedAt.set(r.id, now);
+    if (!r.demo && now - createdMs < LIMITS.CACHE_TTL_MS) {
+      const key = urlKey(r.url);
+      memoryWebsites.set(key, { id: r.id, url: r.url, urlKey: key, createdAt: new Date(createdMs) });
+    }
+  }
+  evictMemoryCache(now);
+}
+
+export function getMemoryReport(id: string, now = Date.now()): TraceReport | undefined {
+  evictMemoryCache(now);
   return memoryReports.get(id);
 }
 
@@ -238,7 +331,7 @@ async function chunked<T>(rows: T[], fn: (c: T[]) => Promise<unknown>, size = 80
 }
 
 async function persist(r: TraceReport) {
-  memoryReports.set(r.id, r);
+  saveReportInMemory(r);
   if (!db) return;
   try {
     await db.transaction(async (tx) => {
@@ -272,10 +365,11 @@ export type TraceState =
 
 export async function getTraceState(id: string): Promise<TraceState> {
   if (id === "demo") return { status: "complete", report: await buildDemoReport() };
+  evictMemoryCache();
   const live = jobs.get(id);
-  if (live && live.phase !== "done") {
-    if (live.phase === "error") return { status: "failed", error: live.error ?? { code: "INTERNAL", message: "Failed" } };
-    return { status: "running", progress: live };
+  if (live && live.progress.phase !== "done") {
+    if (live.progress.phase === "error") return { status: "failed", error: live.progress.error ?? { code: "INTERNAL", message: "Failed" } };
+    return { status: "running", progress: live.progress };
   }
   const mem = memoryReports.get(id);
   if (mem) return { status: "complete", report: mem };

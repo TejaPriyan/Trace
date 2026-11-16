@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
-import type { Progress, TraceReport } from "@/lib/trace/types";
+import { DEFAULT_SETTINGS, parseSettingsParams } from "@/lib/trace/limits";
+import type { CrawlSettings, Progress, TraceReport } from "@/lib/trace/types";
 import { ERROR_COPY, type ErrorCode } from "@/lib/trace/types";
 import { addRecent, getLocalReport, saveLocalReport } from "@/lib/trace/recent";
 import { CrawlProgress } from "./CrawlProgress";
@@ -41,23 +42,9 @@ export function Workspace({ id }: { id: string }) {
     let sawRunning = false;
     let failures = 0;
 
-    // 1. Check persistent browser storage first for instantaneous offline/serverless cache load
-    try {
-      const local = getLocalReport<TraceReport>(id);
-      if (local) {
-        setState({ kind: "ready", report: local });
-        return;
-      }
-      const cached = sessionStorage.getItem(`trace:report:${id}`);
-      if (cached) {
-        const report = JSON.parse(cached) as TraceReport;
-        setState({ kind: "ready", report });
-        return;
-      }
-    } catch {}
-
-    const startStream = async (targetUrl: string) => {
+    const startStream = async (targetUrl: string, targetSettings?: CrawlSettings | null) => {
       sawRunning = true;
+      const effectiveSettings = targetSettings ?? DEFAULT_SETTINGS;
       setState({
         kind: "running",
         progress: {
@@ -67,7 +54,7 @@ export function Workspace({ id }: { id: string }) {
           queued: 0,
           depth: 0,
           externalDomains: 0,
-          maxPages: 25,
+          maxPages: effectiveSettings.maxPages,
           log: [],
           startedAt: Date.now(),
           message: "Connecting to serverless crawler…",
@@ -77,7 +64,15 @@ export function Workspace({ id }: { id: string }) {
       });
 
       try {
-        const res = await fetch(`/api/trace/stream?id=${encodeURIComponent(id)}&url=${encodeURIComponent(targetUrl)}`);
+        const streamParams = new URLSearchParams({ id, url: targetUrl });
+        if (targetSettings) {
+          streamParams.set("maxPages", String(targetSettings.maxPages));
+          streamParams.set("maxDepth", String(targetSettings.maxDepth));
+          streamParams.set("timeoutSec", String(targetSettings.timeoutSec));
+          streamParams.set("jsRendering", targetSettings.jsRendering);
+          streamParams.set("analyzeAssets", String(targetSettings.analyzeAssets));
+        }
+        const res = await fetch(`/api/trace/stream?${streamParams.toString()}`);
         if (cancelled) return;
         if (!res.ok || !res.body) {
           const errJson = await res.json().catch(() => ({}));
@@ -142,22 +137,27 @@ export function Workspace({ id }: { id: string }) {
         if (cancelled) return;
 
         if (res.status === 404) {
-          // If serverless container has lost in-memory job state, attempt streaming crawl with pending URL
+          // If serverless container has lost in-memory job state, attempt streaming crawl with pending URL & settings
           let targetUrl: string | null = null;
+          let targetSettings: CrawlSettings | null = null;
           try {
-            const urlParam = new URLSearchParams(window.location.search).get("url");
+            const params = new URLSearchParams(window.location.search);
+            const urlParam = params.get("url");
             if (urlParam) targetUrl = urlParam;
-            else {
-              const pendingRaw = sessionStorage.getItem(`trace:pending:${id}`);
-              if (pendingRaw) {
-                const p = JSON.parse(pendingRaw);
-                if (p?.url) targetUrl = p.url;
-              }
+
+            const pendingRaw = sessionStorage.getItem(`trace:pending:${id}`);
+            if (pendingRaw) {
+              const p = JSON.parse(pendingRaw) as { url?: string; settings?: CrawlSettings };
+              if (!targetUrl && p?.url) targetUrl = p.url;
+              if (p?.settings) targetSettings = p.settings;
+            }
+            if (!targetSettings && (params.has("maxPages") || params.has("maxDepth") || params.has("timeoutSec") || params.has("jsRendering") || params.has("analyzeAssets") || params.has("settings"))) {
+              targetSettings = parseSettingsParams(params);
             }
           } catch {}
 
           if (targetUrl) {
-            void startStream(targetUrl);
+            void startStream(targetUrl, targetSettings);
             return;
           }
           return setState({ kind: "missing" });
@@ -194,7 +194,26 @@ export function Workspace({ id }: { id: string }) {
         timer = setTimeout(poll, 1500);
       }
     };
-    void poll();
+    const boot = async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      // 1. Check persistent browser storage first for instantaneous offline/serverless cache load
+      try {
+        const local = getLocalReport<TraceReport>(id);
+        if (local) {
+          setState({ kind: "ready", report: local });
+          return;
+        }
+        const cached = sessionStorage.getItem(`trace:report:${id}`);
+        if (cached) {
+          const report = JSON.parse(cached) as TraceReport;
+          setState({ kind: "ready", report });
+          return;
+        }
+      } catch {}
+      void poll();
+    };
+    void boot();
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);

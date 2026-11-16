@@ -1,12 +1,29 @@
-import { clampSettings } from "@/lib/trace/limits";
+import { parseSettingsParams } from "@/lib/trace/limits";
 import { acquireJob, checkRate, clientKey, releaseJob } from "@/lib/trace/rate-limit";
 import { TraceError, assertPublicDns, parseUserUrl } from "@/lib/trace/security";
-import { executeTrace, findExisting, getTraceState, isTraceId } from "@/lib/trace/store";
-import { ERROR_COPY, type Progress } from "@/lib/trace/types";
+import { executeTrace, getTraceState, isTraceId, subscribeTrace } from "@/lib/trace/store";
+import { ERROR_COPY, type ErrorCode, type Progress } from "@/lib/trace/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+} as const;
+
+function sseSingle(event: string, payload: unknown): Response {
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`));
+      controller.close();
+    },
+  });
+  return new Response(stream, { headers: SSE_HEADERS });
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -33,27 +50,80 @@ export async function GET(req: Request) {
   }
 
   const traceId = rawId && isTraceId(rawId) ? rawId : undefined;
+  const settings = parseSettingsParams(searchParams);
 
-  // Check if we already have a completed report for this ID
   if (traceId) {
     const existingState = await getTraceState(traceId);
     if (existingState.status === "complete") {
+      return sseSingle("complete", { id: existingState.report.id, report: existingState.report });
+    }
+    if (existingState.status === "failed") {
+      const code = existingState.error.code as ErrorCode;
+      return sseSingle("error", {
+        code: existingState.error.code,
+        message: ERROR_COPY[code] ?? existingState.error.message,
+        detail: existingState.error.message,
+      });
+    }
+    if (existingState.status === "running") {
+      let unsubscribe: (() => void) | null = null;
       const stream = new ReadableStream({
         start(controller) {
           const encoder = new TextEncoder();
-          controller.enqueue(
-            encoder.encode(`event: complete\ndata: ${JSON.stringify({ id: existingState.report.id, report: existingState.report })}\n\n`)
-          );
-          controller.close();
+          let closed = false;
+          const close = () => {
+            if (closed) return;
+            closed = true;
+            unsubscribe?.();
+            unsubscribe = null;
+            try {
+              controller.close();
+            } catch {}
+          };
+          const send = (event: string, payload: unknown) => {
+            if (closed) return;
+            try {
+              controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`));
+            } catch {
+              close();
+            }
+          };
+          req.signal?.addEventListener("abort", close, { once: true });
+          unsubscribe = subscribeTrace(traceId, (ev) => {
+            if (ev.type === "progress") {
+              send("progress", ev.progress);
+            } else if (ev.type === "complete") {
+              send("complete", { id: ev.report.id, report: ev.report });
+              close();
+            } else if (ev.type === "error") {
+              send("error", {
+                code: ev.error.code,
+                message: ERROR_COPY[ev.error.code] ?? ev.error.message,
+                detail: ev.error.message,
+              });
+              close();
+            }
+          });
+          if (!unsubscribe) {
+            void getTraceState(traceId).then((s) => {
+              if (s.status === "complete") {
+                send("complete", { id: s.report.id, report: s.report });
+              } else if (s.status === "failed") {
+                const code = s.error.code as ErrorCode;
+                send("error", { code: s.error.code, message: ERROR_COPY[code] ?? s.error.message, detail: s.error.message });
+              } else {
+                send("error", { code: "INTERNAL", message: ERROR_COPY.INTERNAL });
+              }
+              close();
+            });
+          }
+        },
+        cancel() {
+          unsubscribe?.();
+          unsubscribe = null;
         },
       });
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-        },
-      });
+      return new Response(stream, { headers: SSE_HEADERS });
     }
   }
 
@@ -88,7 +158,7 @@ export async function GET(req: Request) {
         const report = await executeTrace({
           id: traceId,
           url: url.href,
-          settings: clampSettings(null),
+          settings,
           onProgress: (p: Progress) => {
             send("progress", p);
           },
@@ -107,11 +177,5 @@ export async function GET(req: Request) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }

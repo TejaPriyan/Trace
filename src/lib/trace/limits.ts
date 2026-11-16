@@ -45,3 +45,32 @@ export function clampSettings(input: Partial<CrawlSettings> | undefined | null):
     analyzeAssets: input?.analyzeAssets === false ? false : true,
   };
 }
+
+export function parseSettingsParams(params: URLSearchParams): CrawlSettings {
+  const raw: Record<string, unknown> = {};
+  const json = params.get("settings");
+  if (json) {
+    try {
+      const parsed = JSON.parse(json);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        Object.assign(raw, parsed);
+      }
+    } catch {}
+  }
+  const numParam = (k: string) => {
+    const v = params.get(k);
+    if (v !== null && v !== "") {
+      const n = Number(v);
+      if (Number.isFinite(n)) raw[k] = n;
+    }
+  };
+  numParam("maxPages");
+  numParam("maxDepth");
+  numParam("timeoutSec");
+  const js = params.get("jsRendering");
+  if (js === "auto" || js === "off") raw.jsRendering = js;
+  const assets = params.get("analyzeAssets");
+  if (assets === "false" || assets === "0") raw.analyzeAssets = false;
+  else if (assets === "true" || assets === "1") raw.analyzeAssets = true;
+  return clampSettings(raw as Partial<CrawlSettings>);
+}
